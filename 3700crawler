@@ -3,6 +3,8 @@
 # I M P O R T   M O D U L E S 
 import argparse
 import socket
+import ssl
+import re
 
 # V A R I A B L E S
 DEFAULT_SERVER = "proj5.3700.network"
@@ -17,22 +19,62 @@ class Crawler:
     self.username = args.username
     self.password = args.password
 
+
   # METHOD: execute crawler class
   def run(self):
 
-    # define request + print
-    request = "GET / HTTP/1.0\r\n\r\n"
+    # setup socket, wrap, and connect
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    context = ssl.create_default_context()
+    sock.connect((self.server, self.port))
+    sock = context.wrap_socket(sock, server_hostname=self.server)
+
+    # create intial GET request and send
+    get = (f'GET /accounts/login/ HTTP/1.1\r\n'
+           f'Host: {self.server}\r\n'
+           f'Connection: Keep-Alive\r\n\r\n')
     print("Request to %s:%d" % (self.server, self.port))
-    print(request)
+    print(get)
+    sock.send(get.encode('ascii'))
 
-    # setup socket, connect, and send start request
-    mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    mysocket.connect((self.server, self.port))
-    mysocket.send(request.encode('ascii'))
+    # recv response and print
+    data = sock.recv(4000).decode('ascii')
+    print("Response:\n%s" % data)
 
-    # recv data and print
-    data = mysocket.recv(1000)
-    print("Response:\n%s" % data.decode('ascii'))
+    # search for session id
+    sessionid = re.search(r'sessionid=([^;]*)', data).group(1)
+    print("sessionid= %s" % sessionid)
+
+    # search for csrf token
+    csrf = re.search(r'csrftoken=([^;]*)', data).group(1)
+    print("csrftoken= %s" % csrf)
+
+    # search for csrf middleware token
+    mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', data).group(1)[:-2]
+    print("csrfmiddlewaretoken= %s" % mid)
+
+    # create POST request and send
+    body = (f'username={self.username}&password={self.password}'
+            f'&csrfmiddlewaretoken={mid}'
+            f'&next=/fakebook/')
+    post = (f'POST /accounts/login/ HTTP/1.1\r\n'
+            f'Host: {self.server}\r\n'
+            f'Cookie: sessionid={sessionid}; csrftoken={csrf}\r\n'
+            f'Accept-Encoding: gzip\r\n'
+            f'Content-Type: application/x-www-form-urlencoded\r\n'
+            f'Content-Length: {len(body)}\r\n'
+            f'\r\n'
+            f'{body}\r\n\r\n')
+    sock.send(post.encode('ascii')
+
+    # recv response and print
+    data = sock.recv(4000).decode('ascii')
+    print("Response:\n%s" % data)
+
+    # then have to do the actual flag searching ...
+
+    # close socket
+    sock.close()
 
 # M A I N   M E T H O D
 if __name__ == "__main__":
