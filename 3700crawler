@@ -76,9 +76,21 @@ class Crawler:
     print("Response:\n%s" % postdata)
 
     # isolate status code
-    status = re.search(r'HTTP/1.1 (\d{3})', postdata).group(1)
+    status = re.search(r'HTTP/1.1 (\d{1})', postdata).group(1)
     print("status code= %s" % status)    
 
+    # delegate based on status code
+    match status:
+      case '2':
+        # ...
+      case '3':
+        # ...
+      case '4':
+        # ...
+      case '5':
+        # ...
+      case _:
+        # ...
 
 
 
