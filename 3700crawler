@@ -7,6 +7,7 @@ import ssl
 import re
 
 # V A R I A B L E S
+HTTP_VERSION = 'HTTP/1.1'
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
@@ -15,6 +16,9 @@ DEFAULT_PORT = 443
 class Crawler:
     # CONSTRUCTOR
     def __init__(self, cl_input):
+        self.middle_token = None
+        self.csrf_token = None
+        self.session_id = None
         self.server = cl_input.server
         self.port = cl_input.port
         self.username = cl_input.username
@@ -31,44 +35,21 @@ class Crawler:
         # create initial GET request and send
         sock.send(self.get_request().encode('ascii'))
 
-        # # recv response and print
-        # getdata = sock.recv(4000).decode('ascii')
-        # print("Response:\n%s" % getdata)
-        #
-        # # search for session id
-        # session_id = re.search(r'session_id=([^;]*)', getdata).group(1)
-        # print("session_id= %s" % session_id)
-        #
-        # # search for csrf token
-        # csrf = re.search(r'csrftoken=([^;]*)', getdata).group(1)
-        # print("csrftoken= %s" % csrf)
-        #
-        # # try to find csrf middleware token - relaunch if not found
-        # try:
-        #     mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', getdata).group(1)[:-2]
-        #     print("csrfmiddlewaretoken= %s" % mid)
-        # except:
+        # recv response and print
+        data = sock.recv(4000).decode('ascii')
+        self.parse_response(data)
+
+        # if self.csrf_token is None or self.middle_token is None or self.session_id is None:
         #     self.run()
         #     return
-        #
+
         # # create POST request and send
-        # body = (f'username={self.username}&password={self.password}'
-        #         f'&csrfmiddlewaretoken={mid}'
-        #         f'&next=/fakebook/')
-        # post = (f'POST /accounts/login/ HTTP/1.1\r\n'
-        #         f'Host: {self.server}\r\n'
-        #         f'Cookie: session_id={session_id}; csrftoken={csrf}\r\n'
-        #         f'Accept-Encoding: gzip\r\n'
-        #         f'Content-Type: application/x-www-form-urlencoded\r\n'
-        #         f'Content-Length: {len(body)}\r\n'
-        #         f'\r\n'
-        #         f'{body}\r\n\r\n')
-        # sock.send(post.encode('ascii'))
-        #
-        # # recv response and print
-        # postdata = sock.recv(4000).decode('ascii')
-        # print("Response:\n%s" % postdata)
-        #
+        # sock.send(self.post_request().encode('ascii'))
+
+        # recv response and print
+        # data = sock.recv(4000).decode('ascii')
+        # self.parse_response(data)
+
         # # isolate status code
         # status = re.search(r'HTTP/1.1 (\d{1})', postdata).group(1)
         # print("status code= %s" % status)
@@ -92,12 +73,42 @@ class Crawler:
         sock.close()
 
     def get_request(self):
-        get = (f'GET /accounts/login/ HTTP/1.1\r\n'
+        get = (f'GET /accounts/login/ {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
         print("GET Request to %s:%d" % (self.server, self.port))
         # print(get)
         return get
+
+    def parse_response(self, response):
+        # search for session id
+        self.session_id = re.search(r'sessionid=([^;]*)', response).group(1)
+        print("session_id = %s" % self.session_id)
+
+        # search for csrf token
+        self.csrf_token = re.search(r'csrftoken=([^;]*)', response).group(1)
+        print("csrf = %s" % self.csrf_token)
+
+        # try to find csrf middleware token
+        self.middle_token = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', response)
+        if self.middle_token is not None:
+            self.middle_token = self.middle_token[1][:-2]
+            print(self.middle_token)
+
+    def post_request(self):
+        body = (f'username={self.username}&password={self.password}'
+                f'&csrfmiddlewaretoken={self.middle_token}'
+                f'&next=/fakebook/')
+        post = (f'POST /accounts/login/ HTTP/1.1\r\n'
+                f'Host: {self.server}\r\n'
+                f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
+                f'Accept-Encoding: gzip\r\n'
+                f'Content-Type: application/x-www-form-urlencoded\r\n'
+                f'Content-Length: {len(body)}\r\n'
+                f'\r\n'
+                f'{body}\r\n\r\n')
+
+        return post
 
 
 # M A I N   M E T H O D
