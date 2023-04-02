@@ -38,20 +38,24 @@ class Crawler:
     sock.send(get.encode('ascii'))
 
     # recv response and print
-    data = sock.recv(4000).decode('ascii')
-    print("Response:\n%s" % data)
+    getdata = sock.recv(4000).decode('ascii')
+    print("Response:\n%s" % getdata)
 
     # search for session id
-    sessionid = re.search(r'sessionid=([^;]*)', data).group(1)
+    sessionid = re.search(r'sessionid=([^;]*)', getdata).group(1)
     print("sessionid= %s" % sessionid)
 
     # search for csrf token
-    csrf = re.search(r'csrftoken=([^;]*)', data).group(1)
+    csrf = re.search(r'csrftoken=([^;]*)', getdata).group(1)
     print("csrftoken= %s" % csrf)
 
-    # search for csrf middleware token
-    mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', data).group(1)[:-2]
-    print("csrfmiddlewaretoken= %s" % mid)
+    # try to find csrf middleware token - relaunch if not found
+    try:
+      mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', getdata).group(1)[:-2]
+      print("csrfmiddlewaretoken= %s" % mid)
+    except:
+      self.run()
+      return
 
     # create POST request and send
     body = (f'username={self.username}&password={self.password}'
@@ -68,8 +72,15 @@ class Crawler:
     sock.send(post.encode('ascii'))
 
     # recv response and print
-    data = sock.recv(4000).decode('ascii')
-    print("Response:\n%s" % data)
+    postdata = sock.recv(4000).decode('ascii')
+    print("Response:\n%s" % postdata)
+
+    # isolate status code
+    status = re.search(r'HTTP/1.1 (\d{3})', postdata).group(1)
+    print("status code= %s" % status)    
+
+
+
 
     # then have to do the actual flag searching ...
 
