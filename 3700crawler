@@ -10,106 +10,106 @@ import re
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
+
 # C R A W L E R   C L A S S
 class Crawler:
-  # CONSTRUCTOR
-  def __init__(self, args):
-    self.server = args.server
-    self.port = args.port
-    self.username = args.username
-    self.password = args.password
+    # CONSTRUCTOR
+    def __init__(self, cl_input):
+        self.server = cl_input.server
+        self.port = cl_input.port
+        self.username = cl_input.username
+        self.password = cl_input.password
 
+    # METHOD: execute crawler class
+    def run(self):
+        # setup socket, wrap, and connect
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        context = ssl.create_default_context()
+        sock.connect((self.server, self.port))
+        sock = context.wrap_socket(sock, server_hostname=self.server)
 
-  # METHOD: execute crawler class
-  def run(self):
+        # create initial GET request and send
+        sock.send(self.get_request().encode('ascii'))
 
-    # setup socket, wrap, and connect
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    context = ssl.create_default_context()
-    sock.connect((self.server, self.port))
-    sock = context.wrap_socket(sock, server_hostname=self.server)
+        # # recv response and print
+        # getdata = sock.recv(4000).decode('ascii')
+        # print("Response:\n%s" % getdata)
+        #
+        # # search for session id
+        # session_id = re.search(r'session_id=([^;]*)', getdata).group(1)
+        # print("session_id= %s" % session_id)
+        #
+        # # search for csrf token
+        # csrf = re.search(r'csrftoken=([^;]*)', getdata).group(1)
+        # print("csrftoken= %s" % csrf)
+        #
+        # # try to find csrf middleware token - relaunch if not found
+        # try:
+        #     mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', getdata).group(1)[:-2]
+        #     print("csrfmiddlewaretoken= %s" % mid)
+        # except:
+        #     self.run()
+        #     return
+        #
+        # # create POST request and send
+        # body = (f'username={self.username}&password={self.password}'
+        #         f'&csrfmiddlewaretoken={mid}'
+        #         f'&next=/fakebook/')
+        # post = (f'POST /accounts/login/ HTTP/1.1\r\n'
+        #         f'Host: {self.server}\r\n'
+        #         f'Cookie: session_id={session_id}; csrftoken={csrf}\r\n'
+        #         f'Accept-Encoding: gzip\r\n'
+        #         f'Content-Type: application/x-www-form-urlencoded\r\n'
+        #         f'Content-Length: {len(body)}\r\n'
+        #         f'\r\n'
+        #         f'{body}\r\n\r\n')
+        # sock.send(post.encode('ascii'))
+        #
+        # # recv response and print
+        # postdata = sock.recv(4000).decode('ascii')
+        # print("Response:\n%s" % postdata)
+        #
+        # # isolate status code
+        # status = re.search(r'HTTP/1.1 (\d{1})', postdata).group(1)
+        # print("status code= %s" % status)
 
-    # create intial GET request and send
-    get = (f'GET /accounts/login/ HTTP/1.1\r\n'
-           f'Host: {self.server}\r\n'
-           f'Connection: Keep-Alive\r\n\r\n')
-    print("Request to %s:%d" % (self.server, self.port))
-    print(get)
-    sock.send(get.encode('ascii'))
+        # delegate based on status code
+        # match status:
+        #   case '2':
+        #     # ...
+        #   case '3':
+        #     # ...
+        #   case '4':
+        #     # ...
+        #   case '5':
+        #     # ...
+        #   case _:
+        #     # ...
 
-    # recv response and print
-    getdata = sock.recv(4000).decode('ascii')
-    print("Response:\n%s" % getdata)
+        # then have to do the actual flag searching ...
 
-    # search for session id
-    sessionid = re.search(r'sessionid=([^;]*)', getdata).group(1)
-    print("sessionid= %s" % sessionid)
+        # close socket
+        sock.close()
 
-    # search for csrf token
-    csrf = re.search(r'csrftoken=([^;]*)', getdata).group(1)
-    print("csrftoken= %s" % csrf)
+    def get_request(self):
+        get = (f'GET /accounts/login/ HTTP/1.1\r\n'
+               f'Host: {self.server}\r\n'
+               f'Connection: Keep-Alive\r\n\r\n')
+        print("GET Request to %s:%d" % (self.server, self.port))
+        # print(get)
+        return get
 
-    # try to find csrf middleware token - relaunch if not found
-    try:
-      mid = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', getdata).group(1)[:-2]
-      print("csrfmiddlewaretoken= %s" % mid)
-    except:
-      self.run()
-      return
-
-    # create POST request and send
-    body = (f'username={self.username}&password={self.password}'
-            f'&csrfmiddlewaretoken={mid}'
-            f'&next=/fakebook/')
-    post = (f'POST /accounts/login/ HTTP/1.1\r\n'
-            f'Host: {self.server}\r\n'
-            f'Cookie: sessionid={sessionid}; csrftoken={csrf}\r\n'
-            f'Accept-Encoding: gzip\r\n'
-            f'Content-Type: application/x-www-form-urlencoded\r\n'
-            f'Content-Length: {len(body)}\r\n'
-            f'\r\n'
-            f'{body}\r\n\r\n')
-    sock.send(post.encode('ascii'))
-
-    # recv response and print
-    postdata = sock.recv(4000).decode('ascii')
-    print("Response:\n%s" % postdata)
-
-    # isolate status code
-    status = re.search(r'HTTP/1.1 (\d{1})', postdata).group(1)
-    print("status code= %s" % status)    
-
-    # delegate based on status code
-    match status:
-      case '2':
-        # ...
-      case '3':
-        # ...
-      case '4':
-        # ...
-      case '5':
-        # ...
-      case _:
-        # ...
-
-
-
-    # then have to do the actual flag searching ...
-
-    # close socket
-    sock.close()
 
 # M A I N   M E T H O D
 if __name__ == "__main__":
+    # setup arg parser
+    parser = argparse.ArgumentParser(description='crawl Fakebook')
+    parser.add_argument('-s', dest="server", type=str, default=DEFAULT_SERVER, help="The server to crawl")
+    parser.add_argument('-p', dest="port", type=int, default=DEFAULT_PORT, help="The port to use")
+    parser.add_argument('username', type=str, help="The username to use")
+    parser.add_argument('password', type=str, help="The password to use")
+    args = parser.parse_args()
 
-  # setup arg parser
-  parser = argparse.ArgumentParser(description='crawl Fakebook')
-  parser.add_argument('-s', dest="server", type=str, default=DEFAULT_SERVER, help="The server to crawl")
-  parser.add_argument('-p', dest="port", type=int, default=DEFAULT_PORT, help="The port to use")
-  parser.add_argument('username', type=str, help="The username to use")
-  parser.add_argument('password', type=str, help="The password to use")
-  args = parser.parse_args()
-
-  # setup crawler and execute
-  sender = Crawler(args)
-  sender.run()
+    # setup crawler and execute
+    sender = Crawler(args)
+    sender.run()
