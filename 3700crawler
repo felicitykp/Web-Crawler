@@ -65,7 +65,7 @@ class Crawler:
             f'Content-Length: {len(body)}\r\n'
             f'\r\n'
             f'{body}\r\n\r\n')
-    sock.send(post.encode('ascii')
+    sock.send(post.encode('ascii'))
 
     # recv response and print
     data = sock.recv(4000).decode('ascii')
