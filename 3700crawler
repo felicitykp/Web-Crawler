@@ -58,11 +58,11 @@ class Crawler:
             print("middlewaretoken = %s" % self.middle_token)
 
     # METHOD: craft POST request
-    def post_request(self):
+    def post_request(self, addr):
         body = (f'username={self.username}&password={self.password}'
                 f'&csrfmiddlewaretoken={self.middle_token}'
                 f'&next=/fakebook/')
-        post = (f'POST /accounts/login/ HTTP/1.1\r\n'
+        post = (f'POST {addr} HTTP/1.1\r\n'
                 f'Host: {self.server}\r\n'
                 f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
                 f'Accept-Encoding: gzip\r\n'
