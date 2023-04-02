@@ -37,18 +37,25 @@ class Crawler:
 
         # recv response and print
         data = sock.recv(4000).decode('ascii')
+        # print("\nRESPONSE:\n")
+        # print(data)
         self.parse_response(data)
 
-        # if self.csrf_token is None or self.middle_token is None or self.session_id is None:
-        #     self.run()
-        #     return
+        if self.csrf_token is None or self.session_id is None or self.middle_token is None:
+            print("ERROR: csrf_token and/or session_id and/or middle_token not found.")
+            print("Reattempting initial GET request.\n")
+            sock.close()
+            self.run()
+            return
 
-        # # create POST request and send
-        # sock.send(self.post_request().encode('ascii'))
+        # create POST request and send
+        sock.send(self.post_request().encode('ascii'))
 
         # recv response and print
-        # data = sock.recv(4000).decode('ascii')
-        # self.parse_response(data)
+        data = sock.recv(4000).decode('ascii')
+        print("\nRESPONSE:\n")
+        print(data)
+        self.parse_response(data)
 
         # # isolate status code
         # status = re.search(r'HTTP/1.1 (\d{1})', postdata).group(1)
@@ -81,24 +88,28 @@ class Crawler:
         return get
 
     def parse_response(self, response):
-        # search for session id
-        self.session_id = re.search(r'sessionid=([^;]*)', response).group(1)
-        print("session_id = %s" % self.session_id)
+        # try to find session id
+        self.session_id = re.search(r'sessionid=([^;]*)', response)
+        if self.session_id is not None:
+            self.session_id = self.session_id[1]
+            print("session_id = %s" % self.session_id)
 
         # search for csrf token
-        self.csrf_token = re.search(r'csrftoken=([^;]*)', response).group(1)
-        print("csrf = %s" % self.csrf_token)
+        self.csrf_token = re.search(r'csrftoken=([^;]*)', response)
+        if self.csrf_token is not None:
+            self.csrf_token = self.csrf_token[1]
+            print("csrf = %s" % self.csrf_token)
 
         # try to find csrf middleware token
         self.middle_token = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', response)
         if self.middle_token is not None:
             self.middle_token = self.middle_token[1][:-2]
-            print(self.middle_token)
+            print("middlewaretoken = %s" % self.middle_token)
 
     def post_request(self):
         body = (f'username={self.username}&password={self.password}'
-                f'&csrfmiddlewaretoken={self.middle_token}'
                 f'&next=/fakebook/')
+        # f'&csrfmiddlewaretoken={self.middle_token}'
         post = (f'POST /accounts/login/ HTTP/1.1\r\n'
                 f'Host: {self.server}\r\n'
                 f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
