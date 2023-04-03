@@ -30,15 +30,14 @@ class Crawler:
         self.session_id = None
         # functional vars
         self.flags = []
-        self.frontier = {}
+        self.frontier = {'/accounts/login/': False}  # location : explored?
 
     # METHOD: craft GET request
     def get_request(self, path):
         get = (f'GET {path} {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
-        print("GET Request to %s:%d" % (self.server, self.port))
-        # print(get)
+        # print("GET Request to %s:%d" % (self.server, self.port))
         return get
 
     # METHOD: parse provided response for http header vars
@@ -47,19 +46,19 @@ class Crawler:
         self.session_id = re.search(r'sessionid=([^;]*)', response)
         if self.session_id is not None:
             self.session_id = self.session_id[1]
-            print("session_id = %s" % self.session_id)
+            # print("session_id = %s" % self.session_id)
 
         # search for csrf token
         self.csrf_token = re.search(r'csrftoken=([^;]*)', response)
         if self.csrf_token is not None:
             self.csrf_token = self.csrf_token[1]
-            print("csrf = %s" % self.csrf_token)
+            # print("csrf = %s" % self.csrf_token)
 
         # search for csrf middleware token
         self.middle_token = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', response)
         if self.middle_token is not None:
             self.middle_token = self.middle_token[1][:-2]
-            print("middlewaretoken = %s" % self.middle_token)
+            # print("middlewaretoken = %s" % self.middle_token)
 
     # METHOD: craft POST request
     def post_request(self, path):
@@ -74,46 +73,40 @@ class Crawler:
                 f'Content-Length: {len(body)}\r\n'
                 f'\r\n'
                 f'{body}\r\n\r\n')
-        print("POST Request to %s:%d" % (self.server, self.port))
+        # print("POST Request to %s:%d" % (self.server, self.port))
         return post
 
     # METHOD: navigate to a new page
-    def goto(self, addr):
-        # print that we are redirecting
-        print("REDIRECTING to %s" % addr)
+    def goto(self, path):
+        self.frontier[path] = True
 
         # send GET request and recv response
-        self.sock.send(self.get_request(addr).encode('ascii'))
-        get_data = self.sock.recv(4000).decode('ascii')
-
-        # send POST request and recv response
-        self.sock.send(self.post_request(addr).encode('ascii'))
-        post_data = self.sock.recv(4000).decode('ascii')
-        print("\nRESPONSE:\n")
-        print(post_data)
+        self.sock.send(self.get_request(path).encode('ascii'))
+        get_data = self.receive_data()
+        # get_data += self.receive_data()
 
         # isolate status code
-        status = re.search(r'HTTP/1.1 (\d{1})', post_data).group(1)
+        status = re.search(r'HTTP/1.1 (\d)', get_data).group(1)
         print("status code= %s" % status)
 
         # delegate based on status code
         if status == '2':
-            # look for any flags on page
-            for flag in re.findall(r'FLAG:\s*([^\n\r]*)', post_data):
-                self.flags.append(flag)
+            print("Searching " + path + "...")
+            self.search_page(get_data)
+
         elif status == '3':
-            # look for any links on page
-            for link in re.findall(r'href=\s*([^\n\r]*)', post_data):
-                # check we haven't been to page already
-                if link in self.frontier:
-                    self.goto(link)
-                    self.frontier.append(link)
+            # HTTP Redirect
+            new_location = re.search(r'Location:\s*([^\n\r]*)', get_data)[1]
+            self.frontier[new_location] = True
+            self.goto(new_location)
         elif status == '4':
             # abandon the url
+            print("Forbidden / Not Found")
             return
         elif status == '5':
             # retry goto
-            self.goto(addr)
+            print("Service Unavailable")
+            self.goto(path)
         else:
             print("ERROR: unrecognized error code. relaunching.")
             self.sock.close()
@@ -144,9 +137,15 @@ class Crawler:
         for link in re.findall(r'<li><a href="(.*?)"', page_data):
             print(link)
             # check we haven't been to page already
-            if link in self.frontier:
-                # self.goto(link)
-                self.frontier[link] = [link, False]
+            if link not in self.frontier:
+                self.frontier[link] = False
+
+        to_explore = []
+        for path in self.frontier:
+            if not self.frontier[path]:
+                to_explore.append(path)
+        for path in to_explore:
+            self.goto(path)
 
     # METHOD: execute crawler class
     def run(self):
@@ -154,10 +153,9 @@ class Crawler:
         self.setup()
 
         # send GET request for login page and recv response
+        self.frontier['/accounts/login/'] = True
         self.sock.send(self.get_request('/accounts/login/').encode('ascii'))
-        get_data = self.sock.recv(4000).decode('ascii')
-        # print("\nRESPONSE:\n")
-        # print(get_data)
+        get_data = self.receive_data()
         self.parse_response(get_data)
 
         # determine if necessary vars found
@@ -170,68 +168,28 @@ class Crawler:
 
         # create POST request to login and recv response
         self.sock.send(self.post_request('/accounts/login/').encode('ascii'))
-        post_data = self.sock.recv(4000).decode('ascii')
-        print("\nRESPONSE:\n")
-        print(post_data)
+        post_data = self.receive_data()
         self.parse_response(post_data)
 
+        print("LOOK THROUGH PAGES:...\n")
         # isolate redirect address and goto
         new_location = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
-        print(new_location)
-        self.sock.send(self.get_request(new_location).encode('ascii'))
-        get_data = self.sock.recv(4000).decode('ascii')
-        print(get_data)
-
-        self.search_page(get_data)
+        self.goto(new_location)
 
         # close socket
         self.sock.close()
 
-    # def receive_data(self):
-    #     # The format of the request and response messages are similar, and English-oriented.
-    #     # Both kinds of messages consist of:
-    #     # an initial line,
-    #
-    #     data = self.s.recv(1024)
-    #     end_of_initial_line = data.find(b'\r\n')
-    #     initial_line = data[:end_of_initial_line + 2].decode('ascii')
-    #     print("INITIAL LINE: " + initial_line)
-    #
-    #     # zero or more header lines,
-    #     headers = data[end_of_initial_line + 2:]
-    #
-    #     # Is there more header data to be read
-    #     if headers.find(b'\r\n\r\n') == -1:
-    #         print("Reading more")
-    #         while True:
-    #             headers += self.sock.recv(1024)
-    #             i = headers.find(b'\r\n\r\n')
-    #
-    #             # No more header data
-    #             if i != -1:
-    #                 end_of_headers = i
-    #                 break
-    #
-    #     # an optional message body (e.g. a file, or query data, or query output).
-    #
-    #     headers = str(headers)
-    #
-    #     start = headers.find("Content-Length: ") + len("Content-Length: ")
-    #
-    #     end = headers.find('\\r\\n', start)
-    #
-    #     content_length = int(headers[start:end])
-    #
-    #     # a blank line (i.e. a CRLF by itself), and
-    #     body = headers[headers.find("<!DOCTYPE"):]
-    #     # headers = headers[:end_of_headers]
-    #
-    #     while content_length > len(body):
-    #         body += self.sock.recv(1024).decode('ascii')
-    #
-    #     # print(headers)
-    #     print(body)
-    #     return headers
+    def receive_data(self):
+        data = self.sock.recv(4096)
+
+        content_length = int(re.search(r'Content-Length: (\d+)', data.decode('ascii')).group(1))
+
+        while len(data) < content_length:
+            data += self.sock.recv(4096)
+
+        print(data.decode('ascii'))
+
+        return data.decode('ascii')
 
 
 # M A I N   M E T H O D
