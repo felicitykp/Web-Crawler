@@ -15,6 +15,8 @@ DEFAULT_PORT = 443
 class Crawler:
     # CONSTRUCTOR
     def __init__(self, args):
+        # sock vars
+        self.sock = None
        	# command line vars
         self.server = args.server
         self.port = args.port
@@ -26,11 +28,12 @@ class Crawler:
         self.session_id = None
         # functional vars
         self.flags = []
-        self.links = {}
+        self.explored = []
+        self.unexplored = []
 
     # METHOD: craft GET request
     def get_request(self, addr):
-        get = (f'GET {addr} {HTTP_VERSION}\r\n'
+        get = (f'GET /accounts/login{addr} {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
         print("GET Request to %s:%d" % (self.server, self.port))
@@ -58,11 +61,11 @@ class Crawler:
             print("middlewaretoken = %s" % self.middle_token)
 
     # METHOD: craft POST request
-    def post_request(self):
+    def post_request(self, addr):
         body = (f'username={self.username}&password={self.password}'
                 f'&csrfmiddlewaretoken={self.middle_token}'
                 f'&next=/fakebook/')
-        post = (f'POST /accounts/login/ HTTP/1.1\r\n'
+        post = (f'POST /accounts/login{addr} {HTTP_VERSION}\r\n'
                 f'Host: {self.server}\r\n'
                 f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
                 f'Accept-Encoding: gzip\r\n'
@@ -70,17 +73,23 @@ class Crawler:
                 f'Content-Length: {len(body)}\r\n'
                 f'\r\n'
                 f'{body}\r\n\r\n')
+        print("POST Request to %s:%d" % (self.server, self.port))
         return post
 
     # METHOD: navigate to a new page
     def goto(self, addr):
+        # print that we are redirecting
+        print("REDIRECTING to %s" % addr)
+
         # send GET request and recv response
-        sock.send(self.get_request(addr).encode('ascii'))
-        get_data = sock.recv(4000).decode('ascii')
+        self.sock.send(self.get_request(addr).encode('ascii'))
+        get_data = self.sock.recv(4000).decode('ascii')
 
         # send POST request and recv response
-        sock.send(self.post_request(addr).encode('ascii'))
-        post_data = sock.recv(4000).decode('ascii')
+        self.sock.send(self.post_request(addr).encode('ascii'))
+        post_data = self.sock.recv(4000).decode('ascii')
+        print("\nRESPONSE:\n")
+        print(post_data)
 
         # isolate status code
         status = re.search(r'HTTP/1.1 (\d{1})', post_data).group(1)
@@ -88,14 +97,16 @@ class Crawler:
 
         # delegate based on status code
         if status == '2':
-            # ...
+            # look for any flags on page
+            for flag in re.findall(r'FLAG:\s*([^\n\r]*)', post_data):
+                self.flags.append(flag)
         elif status == '3':
-            # search page for flags
-
-            # find all links of the page
-
-            # loop that navigates to all the pages
-
+            # look for any links on page
+            for link in re.findall(r'href=\s*([^\n\r]*)', post_data):
+                # check we haven't been to page already
+                if link in self.explored:
+                    self.goto(link)
+                    self.explored.append(link)
         elif status == '4':
             # abandon the url
             return
@@ -104,50 +115,46 @@ class Crawler:
             self.goto(addr)
         else:
             print("ERROR: unrecognized error code. relaunching.")
-            sock.close()
+            self.sock.close()
             self.run()
             return
 
     # METHOD: execute crawler class
     def run(self):
         # setup socket, wrap, and connect
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         context = ssl.create_default_context()
-        sock.connect((self.server, self.port))
-        sock = context.wrap_socket(sock, server_hostname=self.server)
+        self.sock.connect((self.server, self.port))
+        self.sock = context.wrap_socket(self.sock, server_hostname=self.server)
 
-        # create initial GET request and send
-        sock.send(self.get_request('/accounts/login/').encode('ascii'))
-
-        # recv response, print, and parse 
-        get_data = sock.recv(4000).decode('ascii')
+        # send GET request and recv response
+        self.sock.send(self.get_request('/').encode('ascii'))
+        get_data = self.sock.recv(4000).decode('ascii')
         # print("\nRESPONSE:\n")
         # print(data)
-        self.parse_response(data)
+        self.parse_response(get_data)
 
         # determine if necessary vars found
         if self.csrf_token is None or self.session_id is None or self.middle_token is None:
             print("ERROR: csrf_token and/or session_id and/or middle_token not found.")
             print("Reattempting initial GET request.\n")
-            sock.close()
+            self.sock.close()
             self.run()
             return
 
-        # create POST request and send
-        sock.send(self.post_request('/accounts/login/').encode('ascii'))
-
-        # recv response and print
-        post_data = sock.recv(4000).decode('ascii')
+        # create POST request and recv response
+        self.sock.send(self.post_request('/').encode('ascii'))
+        post_data = self.sock.recv(4000).decode('ascii')
         print("\nRESPONSE:\n")
-        print(data)
-        self.parse_response(data)
-
+        print(post_data)
+        self.parse_response(post_data)
+           
         # isolate redirect address and goto
-        addr = re.search(r'Location: ([^;]*)', post_data).group[1]
+        addr = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
         self.goto(addr)
 
         # close socket
-        sock.close()
+        self.sock.close()
 
 # M A I N   M E T H O D
 if __name__ == "__main__":
