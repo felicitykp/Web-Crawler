@@ -29,7 +29,6 @@ class Crawler:
         # functional vars
         self.flags = []
         self.explored = []
-        self.unexplored = []
 
     # METHOD: craft GET request
     def get_request(self, addr):
