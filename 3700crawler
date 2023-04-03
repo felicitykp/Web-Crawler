@@ -2,6 +2,7 @@
 
 # I M P O R T   M O D U L E S 
 import argparse
+import json
 import socket
 import ssl
 import re
@@ -11,28 +12,29 @@ HTTP_VERSION = 'HTTP/1.1'
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
+
 # C R A W L E R   C L A S S
 class Crawler:
     # CONSTRUCTOR
     def __init__(self, args):
         # sock vars
         self.sock = None
-       	# command line vars
+        # command line vars
         self.server = args.server
         self.port = args.port
         self.username = args.username
         self.password = args.password
-	# http header vars
+        # http header vars
         self.middle_token = None
         self.csrf_token = None
         self.session_id = None
         # functional vars
         self.flags = []
-        self.explored = []
+        self.frontier = {}
 
     # METHOD: craft GET request
-    def get_request(self, addr):
-        get = (f'GET /accounts/login{addr} {HTTP_VERSION}\r\n'
+    def get_request(self, path):
+        get = (f'GET {path} {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
         print("GET Request to %s:%d" % (self.server, self.port))
@@ -60,11 +62,11 @@ class Crawler:
             print("middlewaretoken = %s" % self.middle_token)
 
     # METHOD: craft POST request
-    def post_request(self, addr):
+    def post_request(self, path):
         body = (f'username={self.username}&password={self.password}'
                 f'&csrfmiddlewaretoken={self.middle_token}'
-                f'&next=/fakebook/')
-        post = (f'POST /accounts/login{addr} {HTTP_VERSION}\r\n'
+                f'&next=')
+        post = (f'POST {path} {HTTP_VERSION}\r\n'
                 f'Host: {self.server}\r\n'
                 f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
                 f'Accept-Encoding: gzip\r\n'
@@ -103,9 +105,9 @@ class Crawler:
             # look for any links on page
             for link in re.findall(r'href=\s*([^\n\r]*)', post_data):
                 # check we haven't been to page already
-                if link in self.explored:
+                if link in self.frontier:
                     self.goto(link)
-                    self.explored.append(link)
+                    self.frontier.append(link)
         elif status == '4':
             # abandon the url
             return
@@ -118,19 +120,44 @@ class Crawler:
             self.run()
             return
 
-    # METHOD: execute crawler class
-    def run(self):
+    def setup(self):
         # setup socket, wrap, and connect
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         context = ssl.create_default_context()
         self.sock.connect((self.server, self.port))
         self.sock = context.wrap_socket(self.sock, server_hostname=self.server)
 
-        # send GET request and recv response
-        self.sock.send(self.get_request('/').encode('ascii'))
+    def search_page(self, page_data):
+        # FIND SECRET FLAGS
+        # <h2 class='secret_flag' style="color:red">FLAG: 64-characters-of-random-alphanumerics</h2>
+
+        # look for any flags on page
+        for flag in re.findall(r'FLAG:\s*([^\n\r]*)', page_data):
+            self.flags.append(flag)
+
+        if len(self.flags) > 0:
+            print("FLAGS:")
+            print(self.flags)
+
+        # find all urls and add them to explored
+        # for link in re.findall(r'a href=\s*([^\n\r]*)', page_data):
+        for link in re.findall(r'<li><a href="(.*?)"', page_data):
+            print(link)
+            # check we haven't been to page already
+            if link in self.frontier:
+                # self.goto(link)
+                self.frontier[link] = [link, False]
+
+    # METHOD: execute crawler class
+    def run(self):
+        # setup socket, wrap, and connect
+        self.setup()
+
+        # send GET request for login page and recv response
+        self.sock.send(self.get_request('/accounts/login/').encode('ascii'))
         get_data = self.sock.recv(4000).decode('ascii')
         # print("\nRESPONSE:\n")
-        # print(data)
+        # print(get_data)
         self.parse_response(get_data)
 
         # determine if necessary vars found
@@ -141,19 +168,71 @@ class Crawler:
             self.run()
             return
 
-        # create POST request and recv response
-        self.sock.send(self.post_request('/').encode('ascii'))
+        # create POST request to login and recv response
+        self.sock.send(self.post_request('/accounts/login/').encode('ascii'))
         post_data = self.sock.recv(4000).decode('ascii')
         print("\nRESPONSE:\n")
         print(post_data)
         self.parse_response(post_data)
-           
+
         # isolate redirect address and goto
-        addr = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
-        self.goto(addr)
+        new_location = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
+        print(new_location)
+        self.sock.send(self.get_request(new_location).encode('ascii'))
+        get_data = self.sock.recv(4000).decode('ascii')
+        print(get_data)
+
+        self.search_page(get_data)
 
         # close socket
         self.sock.close()
+
+    # def receive_data(self):
+    #     # The format of the request and response messages are similar, and English-oriented.
+    #     # Both kinds of messages consist of:
+    #     # an initial line,
+    #
+    #     data = self.s.recv(1024)
+    #     end_of_initial_line = data.find(b'\r\n')
+    #     initial_line = data[:end_of_initial_line + 2].decode('ascii')
+    #     print("INITIAL LINE: " + initial_line)
+    #
+    #     # zero or more header lines,
+    #     headers = data[end_of_initial_line + 2:]
+    #
+    #     # Is there more header data to be read
+    #     if headers.find(b'\r\n\r\n') == -1:
+    #         print("Reading more")
+    #         while True:
+    #             headers += self.sock.recv(1024)
+    #             i = headers.find(b'\r\n\r\n')
+    #
+    #             # No more header data
+    #             if i != -1:
+    #                 end_of_headers = i
+    #                 break
+    #
+    #     # an optional message body (e.g. a file, or query data, or query output).
+    #
+    #     headers = str(headers)
+    #
+    #     start = headers.find("Content-Length: ") + len("Content-Length: ")
+    #
+    #     end = headers.find('\\r\\n', start)
+    #
+    #     content_length = int(headers[start:end])
+    #
+    #     # a blank line (i.e. a CRLF by itself), and
+    #     body = headers[headers.find("<!DOCTYPE"):]
+    #     # headers = headers[:end_of_headers]
+    #
+    #     while content_length > len(body):
+    #         body += self.sock.recv(1024).decode('ascii')
+    #
+    #     # print(headers)
+    #     print(body)
+    #     return headers
+
 
 # M A I N   M E T H O D
 if __name__ == "__main__":
