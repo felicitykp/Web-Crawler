@@ -36,8 +36,17 @@ class Crawler:
     def get_request(self, path):
         get = (f'GET {path} {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
+               f'Cookie: csrftoken={self.csrf_token}; sessionid={self.session_id}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
         # print("GET Request to %s:%d" % (self.server, self.port))
+        return get
+
+    def initial_get_request(self, path):
+        get = (f'GET {path} {HTTP_VERSION}\r\n'
+               f'Host: {self.server}\r\n'
+               f'Connection: Keep-Alive\r\n\r\n')
+        # print("GET Request to %s:%d" % (self.server, self.port))
+        print(get)
         return get
 
     # METHOD: parse provided response for http header vars
@@ -64,7 +73,7 @@ class Crawler:
     def post_request(self, path):
         body = (f'username={self.username}&password={self.password}'
                 f'&csrfmiddlewaretoken={self.middle_token}'
-                f'&next=')
+                f'&next=/fakebook/')
         post = (f'POST {path} {HTTP_VERSION}\r\n'
                 f'Host: {self.server}\r\n'
                 f'Cookie: sessionid={self.session_id}; csrftoken={self.csrf_token}\r\n'
@@ -80,33 +89,40 @@ class Crawler:
     def goto(self, path):
         self.frontier[path] = True
 
+        print(path)
+
         # send GET request and recv response
         self.sock.send(self.get_request(path).encode('ascii'))
         get_data = self.receive_data()
-        # get_data += self.receive_data()
+
+        if get_data is None:
+            print("STATUS IS 5.")
+            self.goto(path)
+            return
 
         # isolate status code
         status = re.search(r'HTTP/1.1 (\d)', get_data).group(1)
-        print("status code= %s" % status)
+        # print("status code= %s" % status)
 
         # delegate based on status code
         if status == '2':
-            print("Searching " + path + "...")
+            # print("Searching " + path + "...")
             self.search_page(get_data)
 
         elif status == '3':
             # HTTP Redirect
             new_location = re.search(r'Location:\s*([^\n\r]*)', get_data)[1]
-            self.frontier[new_location] = True
             self.goto(new_location)
+
         elif status == '4':
             # abandon the url
             print("Forbidden / Not Found")
             return
         elif status == '5':
             # retry goto
-            print("Service Unavailable")
+            print("STATUS IS 5.")
             self.goto(path)
+            return
         else:
             print("ERROR: unrecognized error code. relaunching.")
             self.sock.close()
@@ -125,17 +141,11 @@ class Crawler:
         # <h2 class='secret_flag' style="color:red">FLAG: 64-characters-of-random-alphanumerics</h2>
 
         # look for any flags on page
-        for flag in re.findall(r'FLAG:\s*([^\n\r]*)', page_data):
+        for flag in re.findall(r'FLAG:(.*?)</h2>', page_data):
             self.flags.append(flag)
 
-        if len(self.flags) > 0:
-            print("FLAGS:")
-            print(self.flags)
-
         # find all urls and add them to explored
-        # for link in re.findall(r'a href=\s*([^\n\r]*)', page_data):
         for link in re.findall(r'<li><a href="(.*?)"', page_data):
-            print(link)
             # check we haven't been to page already
             if link not in self.frontier:
                 self.frontier[link] = False
@@ -147,14 +157,25 @@ class Crawler:
         for path in to_explore:
             self.goto(path)
 
+    def receive_data(self):
+        data = self.sock.recv(4096)
+        try:
+            content_length = int(re.search(r'Content-Length: (\d+)', data.decode('ascii')).group(1))
+
+            while len(data) < content_length:
+                data += self.sock.recv(4096)
+
+            return data.decode('ascii')
+        except AttributeError:
+            return None
+
     # METHOD: execute crawler class
     def run(self):
         # setup socket, wrap, and connect
         self.setup()
 
-        # send GET request for login page and recv response
-        self.frontier['/accounts/login/'] = True
-        self.sock.send(self.get_request('/accounts/login/').encode('ascii'))
+        # send GET request for fakebook page and recv response
+        self.sock.send(self.initial_get_request('/accounts/login/').encode('ascii'))
         get_data = self.receive_data()
         self.parse_response(get_data)
 
@@ -166,30 +187,19 @@ class Crawler:
             self.run()
             return
 
-        # create POST request to login and recv response
-        self.sock.send(self.post_request('/accounts/login/').encode('ascii'))
+        # create POST request to log in and recv response
+        self.sock.send(self.post_request('/accounts/login/?next=/fakebook/').encode('ascii'))
         post_data = self.receive_data()
         self.parse_response(post_data)
 
-        print("LOOK THROUGH PAGES:...\n")
         # isolate redirect address and goto
         new_location = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
         self.goto(new_location)
 
+        print(self.flags)
+
         # close socket
         self.sock.close()
-
-    def receive_data(self):
-        data = self.sock.recv(4096)
-
-        content_length = int(re.search(r'Content-Length: (\d+)', data.decode('ascii')).group(1))
-
-        while len(data) < content_length:
-            data += self.sock.recv(4096)
-
-        print(data.decode('ascii'))
-
-        return data.decode('ascii')
 
 
 # M A I N   M E T H O D
