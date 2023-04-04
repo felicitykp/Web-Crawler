@@ -95,7 +95,7 @@ class Crawler:
 
         # reload if page fails
         if get_data is None:
-            print("NO DATA for " + path + ". TRY AGAIN.")
+            # print("NO DATA for " + path + ". TRY AGAIN.")
             # print(get_data)
             self.goto(path)
             return
@@ -108,7 +108,7 @@ class Crawler:
 
         # delegate based on status code
         if status == '2':
-            print("Searching " + path + "...")
+            # print("Searching " + path + "...")
             self.search_page(get_data)
 
         elif status == '3':
@@ -124,7 +124,7 @@ class Crawler:
         
         elif status == '5':
             # retry goto
-            print("5 - " + path)
+            # print("5 - " + path)
             self.to_visit.append(path)
 
         else:
@@ -197,9 +197,12 @@ class Crawler:
         new_location = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
         self.to_visit.append(new_location)
 
-        # keep exploring the frontier until all flags found or all pages explored
-        while len(self.to_visit) > 0 and len(self.flags) < 5:
-            self.goto(self.to_visit.pop())
+        try:
+            # keep exploring the frontier until all flags found or all pages explored
+            while len(self.to_visit) > 0 and len(self.flags) < 5:
+                self.goto(self.to_visit.pop())
+        except RecursionError:
+            print(self.flags)
 
         print(self.flags)
 
