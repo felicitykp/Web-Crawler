@@ -2,7 +2,6 @@
 
 # I M P O R T   M O D U L E S 
 import argparse
-import json
 import socket
 import ssl
 import re
@@ -11,7 +10,6 @@ import re
 HTTP_VERSION = 'HTTP/1.1'
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
-
 
 # C R A W L E R   C L A S S
 class Crawler:
@@ -39,15 +37,12 @@ class Crawler:
                f'Host: {self.server}\r\n'
                f'Cookie: csrftoken={self.csrf_token}; sessionid={self.session_id}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
-        # print("GET Request to %s:%d" % (self.server, self.port))
         return get
 
     def initial_get_request(self, path):
         get = (f'GET {path} {HTTP_VERSION}\r\n'
                f'Host: {self.server}\r\n'
                f'Connection: Keep-Alive\r\n\r\n')
-        # print("GET Request to %s:%d" % (self.server, self.port))
-        print(get)
         return get
 
     # METHOD: parse provided response for http header vars
@@ -56,19 +51,16 @@ class Crawler:
         self.session_id = re.search(r'sessionid=([^;]*)', response)
         if self.session_id is not None:
             self.session_id = self.session_id[1]
-            # print("session_id = %s" % self.session_id)
 
         # search for csrf token
         self.csrf_token = re.search(r'csrftoken=([^;]*)', response)
         if self.csrf_token is not None:
             self.csrf_token = self.csrf_token[1]
-            # print("csrf = %s" % self.csrf_token)
 
         # search for csrf middleware token
         self.middle_token = re.search(r'name="csrfmiddlewaretoken" value="\s*([^\n\r]*)', response)
         if self.middle_token is not None:
             self.middle_token = self.middle_token[1][:-2]
-            # print("middlewaretoken = %s" % self.middle_token)
 
     # METHOD: craft POST request
     def post_request(self, path):
@@ -83,7 +75,6 @@ class Crawler:
                 f'Content-Length: {len(body)}\r\n'
                 f'\r\n'
                 f'{body}\r\n\r\n')
-        # print("POST Request to %s:%d" % (self.server, self.port))
         return post
 
     # METHOD: navigate to a new page
@@ -95,8 +86,6 @@ class Crawler:
 
         # reload if page fails
         if get_data is None:
-            # print("NO DATA for " + path + ". TRY AGAIN.")
-            # print(get_data)
             self.goto(path)
             return
 
@@ -108,27 +97,22 @@ class Crawler:
 
         # delegate based on status code
         if status == '2':
-            # print("Searching " + path + "...")
             self.search_page(get_data)
 
         elif status == '3':
             # HTTP Redirect
             new_location = re.search(r'Location:\s*([^\n\r]*)', get_data)[1]
             if new_location not in self.visited:
-                print("NEW URL: " + new_location)
                 self.to_visit.append(new_location)
 
         elif status == '4':
             # abandon the url
-            print("Forbidden / Not Found")
-        
+            return
+
         elif status == '5':
-            # retry goto
-            # print("5 - " + path)
             self.to_visit.append(path)
 
         else:
-            print("ERROR: unrecognized error code. relaunching.")
             self.sock.close()
             self.run()
             return
@@ -146,7 +130,7 @@ class Crawler:
 
         # look for any flags on page
         for flag in re.findall(r'FLAG: (.*?)</h2>', page_data):
-            print("FLAG FOUND: " + flag)
+            print(flag)
             self.flags.append(flag)
 
         # find all urls
@@ -155,7 +139,6 @@ class Crawler:
             link = "/fakebook/" + link
             if link not in self.visited and link not in self.to_visit:
                 self.to_visit.append(link)
-                # self.goto(link)
 
     def receive_data(self):
         data = self.sock.recv(4096)
@@ -202,7 +185,8 @@ class Crawler:
             while len(self.to_visit) > 0 and len(self.flags) < 5:
                 self.goto(self.to_visit.pop())
         except RecursionError:
-            print(self.flags)
+            # print(self.flags)
+            return
 
         # close socket
         self.sock.close()
