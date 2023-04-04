@@ -185,7 +185,7 @@ class Crawler:
             while len(self.to_visit) > 0 and len(self.flags) < 5:
                 self.goto(self.to_visit.pop())
         except RecursionError:
-            # print(self.flags)
+            print("Error. Recursion went on for too long.")
             return
 
         # close socket
