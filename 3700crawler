@@ -88,17 +88,20 @@ class Crawler:
 
     # METHOD: navigate to a new page
     def goto(self, path):
-        self.to_visit.remove(path)
-        self.visited.append(path)
 
         # send GET request and recv response
         self.sock.send(self.get_request(path).encode('ascii'))
         get_data = self.receive_data()
 
+        # reload if page fails
         if get_data is None:
             print("NO DATA for " + path + ". TRY AGAIN.")
             # print(get_data)
+            self.goto(path)
             return
+
+        # update that it has been visited
+        self.visited.append(path)
 
         # isolate status code
         status = re.search(r'HTTP/1.1 (\d)', get_data).group(1)
@@ -108,25 +111,22 @@ class Crawler:
             print("Searching " + path + "...")
             self.search_page(get_data)
 
-            if len(self.to_visit) > 0:
-                self.goto(self.to_visit[0])
-
         elif status == '3':
             # HTTP Redirect
             new_location = re.search(r'Location:\s*([^\n\r]*)', get_data)[1]
-            print("NEW URL: " + new_location)
-            self.to_visit.append(new_location)
-            self.goto(new_location)
+            if new_location not in self.visited:
+                print("NEW URL: " + new_location)
+                self.to_visit.append(new_location)
 
         elif status == '4':
             # abandon the url
             print("Forbidden / Not Found")
-            return
+        
         elif status == '5':
             # retry goto
             print("5 - " + path)
             self.to_visit.append(path)
-            return
+
         else:
             print("ERROR: unrecognized error code. relaunching.")
             self.sock.close()
@@ -145,7 +145,7 @@ class Crawler:
         # <h2 class='secret_flag' style="color:red">FLAG: 64-characters-of-random-alphanumerics</h2>
 
         # look for any flags on page
-        for flag in re.findall(r'FLAG:', page_data): # (.*?)</h2>', page_data):
+        for flag in re.findall(r'FLAG: (.*?)</h2>', page_data):
             print("FLAG FOUND: " + flag)
             self.flags.append(flag)
 
@@ -153,7 +153,7 @@ class Crawler:
         links = re.findall(r'href="/fakebook/(.*?)"', page_data)
         for link in links:
             link = "/fakebook/" + link
-            if link not in self.visited:
+            if link not in self.visited and link not in self.to_visit:
                 self.to_visit.append(link)
                 # self.goto(link)
 
@@ -196,7 +196,10 @@ class Crawler:
         # isolate redirect address and goto
         new_location = re.search(r'Location:\s*([^\n\r]*)', post_data)[1]
         self.to_visit.append(new_location)
-        self.goto(new_location)
+
+        # keep exploring the frontier until all flags found or all pages explored
+        while len(self.to_visit) > 0 and len(self.flags) < 5:
+            self.goto(self.to_visit.pop())
 
         print(self.flags)
 
