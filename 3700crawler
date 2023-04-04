@@ -204,8 +204,6 @@ class Crawler:
         except RecursionError:
             print(self.flags)
 
-        print(self.flags)
-
         # close socket
         self.sock.close()
 
